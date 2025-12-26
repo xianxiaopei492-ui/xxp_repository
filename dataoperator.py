@@ -1,5 +1,6 @@
 import pymysql
 import json
+import hashlib
 
 
 class DataOperator:
@@ -928,5 +929,91 @@ class DataOperator:
             return True
         except Exception as e:
             print(f"插入库存信息失败: {e}, 数据: {inventory_data}")
+            return False
+
+    def insert_sales_info(self, sales_data):
+        """
+        插入销量统计信息到sales_info表
+        """
+        if not self.conn:
+            self.connect_db()
+
+            # 将sku字段转换为JSON字符串并计算MD5
+        sku_json = json.dumps(sales_data.get('sku', []), sort_keys=True, separators=(',', ':'))
+        sales_code = hashlib.md5(sku_json.encode('utf-8')).hexdigest()
+
+        sql = """
+          INSERT INTO sales_info (
+              sku, spu, spu_name, msku, mskuld, sku_and_product_name, product_name, develop_name,
+              sid, platform_code, platform_name, site_code, site_name, store_name,
+              attribute, parent_asin, platform_product_id, platform_product_title,
+              currency_code, icon, pic_url, date_collect, volume_total, sales_code
+          ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+          ON DUPLICATE KEY UPDATE
+              spu = VALUES(spu),
+              spu_name = VALUES(spu_name),
+              msku = VALUES(msku),
+              mskuld = VALUES(mskuld),
+              sku_and_product_name = VALUES(sku_and_product_name),
+              product_name = VALUES(product_name),
+              develop_name = VALUES(develop_name),
+              sid = VALUES(sid),
+              platform_code = VALUES(platform_code),
+              platform_name = VALUES(platform_name),
+              site_code = VALUES(site_code),
+              site_name = VALUES(site_name),
+              store_name = VALUES(store_name),
+              attribute = VALUES(attribute),
+              parent_asin = VALUES(parent_asin),
+              platform_product_id = VALUES(platform_product_id),
+              platform_product_title = VALUES(platform_product_title),
+              currency_code = VALUES(currency_code),
+              icon = VALUES(icon),
+              pic_url = VALUES(pic_url),
+              date_collect = VALUES(date_collect),
+              volume_total = VALUES(volume_total),
+              update_time = CURRENT_TIMESTAMP
+          """
+
+        try:
+            # 准备数据
+            values = (
+                self.serialize_value(sales_data.get('sku', [])),
+                self.serialize_value(sales_data.get('spu', [])),
+                self.serialize_value(sales_data.get('spu_name', [])),
+                self.serialize_value(sales_data.get('msku', [])),
+                self.serialize_value(sales_data.get('mskuId', [])),
+                self.serialize_value(sales_data.get('skuAndProductName', [])),
+                self.serialize_value(sales_data.get('product_name', [])),
+                self.serialize_value(sales_data.get('develop_name', [])),
+                self.serialize_value(sales_data.get('sid', [])),
+                self.serialize_value(sales_data.get('platform_code', [])),
+                self.serialize_value(sales_data.get('platform_name', [])),
+                self.serialize_value(sales_data.get('site_code', [])),
+                self.serialize_value(sales_data.get('site_name', [])),
+                self.serialize_value(sales_data.get('store_name', [])),
+                self.serialize_value(sales_data.get('attribute', [])),
+                self.serialize_value(sales_data.get('parentAsin', [])),
+                self.serialize_value(sales_data.get('platform_product_id', [])),
+                self.serialize_value(sales_data.get('platform_product_title', [])),
+                self.serialize_value(sales_data.get('currency_code', '')),
+                self.serialize_value(sales_data.get('icon', '')),
+                self.serialize_value(sales_data.get('pic_url', '')),
+                self.serialize_value(sales_data.get('date_collect', {})),
+                self.serialize_value(
+                    float(sales_data.get('volumeTotal', 0))
+                    if sales_data.get('volumeTotal') not in [None, ''] else 0.0
+                ),
+                sales_code  # 新增的sales_code字段
+            )
+
+            self.cursor.execute(sql, values)
+            self.conn.commit()
+            print(f"销量信息插入/更新成功，sales_code: {sales_code}")
+            return True
+
+        except Exception as e:
+            print(f"插入销量信息失败: {e}")
+            self.conn.rollback()
             return False
 

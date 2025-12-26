@@ -38,14 +38,7 @@ def check_recent_logs(log_file_path, keyword_success='任务执行成功', keywo
 
 
 if __name__ == "__main__":
-    log_path1 = '/tmp/xxp/sqljob/sql_job.log'  # 检查sql增量更新是否执行
     log_path2 = '/var/log/daily_order_update.log'
-    # if check_recent_logs(log_path1):
-    #     print("sql文件正常执行!")
-    #     sys.exit(0)  # 检查正常，退出码0
-    # else:
-    #     print("sql文件")
-    #     sys.exit(1)  # 检查异常，退出码1
     if check_recent_logs(log_path2):
         print("每日订单数据更新py文件正常执行!")
         sys.exit(0)  # 检查正常，退出码0

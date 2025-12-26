@@ -1,7 +1,7 @@
-
 """
 订单状态每日自动更新脚本
-功能：每天定时从零星平台API获取最新订单状态，更新orders表和platform_info表
+功能：每天定时从零星平台API获取最新订单状态，更新
+新增功能：每日更新库存、仓库、店铺信息
 """
 
 import os
@@ -10,8 +10,8 @@ import logging
 import time
 from datetime import datetime, timedelta
 from dataoperator import DataOperator
-from config import  load_config_from_env
-from main import LingXingAPI  
+from config import load_config_from_env
+from main import LingXingAPI
 
 # 添加当前目录到Python路径，确保可以导入您的模块
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -40,8 +40,6 @@ class DailyOrderUpdater:
             app_secret: 零星平台APP_SECRET
             db_config: 数据库连接配置
         """
-       
-
         self.api_client = LingXingAPI(app_id, app_secret)
         self.db_config = db_config
         self.data_operator = None
@@ -133,6 +131,83 @@ class DailyOrderUpdater:
             logger.error(f"获取订单数据失败: {e}")
             return False
 
+    def update_store_info(self):
+        """
+        更新店铺信息表
+        Returns:
+            bool: 更新是否成功
+        """
+        try:
+            logger.info("开始更新店铺信息...")
+
+            # 调用店铺信息API
+            success = self.api_client.getstoreList(self.db_config)
+
+            if success:
+                logger.info("✅ 店铺信息更新成功")
+            else:
+                logger.error("❌ 店铺信息更新失败")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"更新店铺信息失败: {e}")
+            return False
+
+    def update_warehouse_info(self):
+        """
+        更新仓库信息表
+        Returns:
+            bool: 更新是否成功
+        """
+        try:
+            logger.info("开始更新仓库信息...")
+
+            # 调用仓库信息API
+            self.api_client.getwarehouseList(self.db_config, type=3)
+
+            logger.info("✅ 仓库信息更新完成")
+            return True
+
+        except Exception as e:
+            logger.error(f"更新仓库信息失败: {e}")
+            return False
+
+    def update_inventory_info(self):
+        """
+        更新库存信息表
+        Returns:
+            bool: 更新是否成功
+        """
+        try:
+            logger.info("开始更新库存信息...")
+
+            # 获取所有仓库ID
+            warehouse_ids = self.api_client.getwarehouseids(self.db_config)
+
+            if not warehouse_ids:
+                logger.warning("未获取到仓库ID，跳过库存更新")
+                return False
+
+            # 将仓库ID列表转换为逗号分隔的字符串
+            wid_str = ",".join([str(wid) for wid in warehouse_ids])
+            logger.info(f"获取到 {len(warehouse_ids)} 个仓库，开始更新库存...")
+
+            # 调用库存信息API
+            success = self.api_client.getinvetoryList(self.db_config, str=wid_str)
+
+            if success:
+                logger.info("✅ 库存信息更新成功")
+            else:
+                logger.error("❌ 库存信息更新失败")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"更新库存信息失败: {e}")
+            return False
+
+
     def validate_order_status_consistency(self):
         """
         验证订单状态一致性（可选功能）
@@ -200,23 +275,33 @@ class DailyOrderUpdater:
                 self.data_operator.conn.rollback()
             return False
 
-    def run_daily_update(self, days_to_check=1, enable_cleanup=False):
+    def run_daily_update(self, days_to_check=1, enable_cleanup=False,
+                         update_inventory=True, update_warehouse=True,
+                         update_store=True, update_sales=True, sales_days_back=7,
+                         rebuild_merge_table=True):
         """
-        执行每日更新任务
+        执行每日更新任务（整合销量数据更新）
 
         Args:
             days_to_check: 检查最近多少天的订单
             enable_cleanup: 是否启用数据清理
+            update_inventory: 是否更新库存信息
+            update_warehouse: 是否更新仓库信息
+            update_store: 是否更新店铺信息
+            update_sales: 是否更新销量数据
+            sales_days_back: 销量数据回溯天数
+            rebuild_merge_table: 是否重建订单合并宽表
 
         Returns:
             bool: 任务执行是否成功
         """
         logger.info("=" * 60)
-        logger.info("开始执行每日订单状态更新任务")
+        logger.info("开始执行每日数据更新任务")
         logger.info("=" * 60)
 
         start_time = time.time()
-        success = False
+        overall_success = True
+        task_results = {}
 
         try:
             # 1. 连接数据库
@@ -224,45 +309,540 @@ class DailyOrderUpdater:
                 return False
 
             # 2. 获取并更新订单数据
-            update_success = self.fetch_updated_orders(days_to_check)
-
-            if not update_success:
+            logger.info("开始更新订单数据...")
+            order_success = self.fetch_updated_orders(days_to_check)
+            task_results["订单数据"] = order_success
+            if not order_success:
                 logger.error("订单数据更新失败")
-                return False
+                overall_success = False
+            else:
+                logger.info("✅ 订单数据更新成功")
 
-            # 3. 验证数据一致性（可选）
-            self.validate_order_status_consistency()
+            # 3. 更新仓库信息
+            if update_warehouse:
+                logger.info("开始更新仓库信息...")
+                warehouse_success = self.update_warehouse_info()
+                task_results["仓库信息"] = warehouse_success
+                if not warehouse_success:
+                    logger.warning("仓库信息更新失败，但继续执行其他任务")
+                    overall_success = False
+                else:
+                    logger.info("✅ 仓库信息更新成功")
+            else:
+                logger.info("跳过仓库信息更新")
+                task_results["仓库信息"] = "跳过"
 
-            # # 4. 清理旧数据（可选）
-            # if enable_cleanup:
-            #     self.cleanup_old_data(days_to_keep=90)
+            # 4. 更新店铺信息
+            if update_store:
+                logger.info("开始更新店铺信息...")
+                store_success = self.update_store_info()
+                task_results["店铺信息"] = store_success
+                if not store_success:
+                    logger.warning("店铺信息更新失败，但继续执行其他任务")
+                    overall_success = False
+                else:
+                    logger.info("✅ 店铺信息更新成功")
+            else:
+                logger.info("跳过店铺信息更新")
+                task_results["店铺信息"] = "跳过"
 
-            # 5. 计算执行时间
+            # 5. 更新库存信息（需要先有仓库信息）
+            if update_inventory:
+                logger.info("开始更新库存信息...")
+                inventory_success = self.update_inventory_info()
+                task_results["库存信息"] = inventory_success
+                if not inventory_success:
+                    logger.warning("库存信息更新失败，但继续执行其他任务")
+                    overall_success = False
+                else:
+                    logger.info("✅ 库存信息更新成功")
+            else:
+                logger.info("跳过库存信息更新")
+                task_results["库存信息"] = "跳过"
+
+            # 6. 更新销量数据
+            if update_sales:
+                logger.info("开始更新销量数据...")
+                sales_success = self._update_daily_sales(sales_days_back, enable_cleanup)
+                task_results["销量数据"] = sales_success
+                if not sales_success:
+                    logger.warning("销量数据更新失败，但继续执行其他任务")
+                    overall_success = False
+                else:
+                    logger.info("✅ 销量数据更新成功")
+            else:
+                logger.info("跳过销量数据更新")
+                task_results["销量数据"] = "跳过"
+
+            # 7. 重建订单合并宽表（供前端展示）
+            if rebuild_merge_table:
+                logger.info("开始重建订单合并宽表...")
+                merge_success = self.rebuild_orders_merge_table()
+                task_results["合并宽表"] = merge_success
+                if not merge_success:
+                    logger.warning("订单合并宽表重建失败，但继续执行其他任务")
+                    overall_success = False
+                else:
+                    logger.info("✅ 订单合并宽表重建成功")
+            else:
+                logger.info("跳过订单合并宽表重建")
+                task_results["合并宽表"] = "跳过"
+
+            # 8. 验证数据一致性（可选）
+            logger.info("开始验证数据一致性...")
+            consistency_success = self.validate_order_status_consistency()
+            task_results["数据一致性"] = consistency_success
+            if not consistency_success:
+                logger.warning("数据一致性验证失败")
+            else:
+                logger.info("✅ 数据一致性验证完成")
+
+            # 9. 清理旧数据
+            if enable_cleanup:
+                logger.info("开始清理旧数据...")
+                cleanup_success = self.cleanup_old_data()
+                task_results["数据清理"] = cleanup_success
+                if not cleanup_success:
+                    logger.warning("数据清理失败")
+                else:
+                    logger.info("✅ 数据清理完成")
+            else:
+                logger.info("跳过数据清理")
+                task_results["数据清理"] = "跳过"
+
+            # 10. 计算执行时间并生成报告
             execution_time = time.time() - start_time
-            logger.info(f"每日订单更新任务执行完成，耗时: {execution_time:.2f} 秒")
-
-            success = True
+            self._generate_update_report(task_results, execution_time, overall_success)
 
         except Exception as e:
             logger.error(f"每日更新任务执行失败: {e}")
-            success = False
+            overall_success = False
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
 
         finally:
             # 确保数据库连接被关闭
             self.disconnect_database()
 
-        return success
+        return overall_success
 
+    def _update_daily_sales(self, days_back=7, enable_cleanup=False):
+        """
+        内部方法：更新每日销量数据（不包含数据库连接管理）
 
+        Args:
+            days_back: 获取最近多少天的数据
+            enable_cleanup: 是否启用数据清理
+
+        Returns:
+            bool: 更新是否成功
+        """
+        try:
+            overall_success = True
+
+            # 更新销量统计数据（按不同维度分别更新）
+            update_tasks = [
+                {"name": "SKU维度销量", "data_type": "4"},
+                {"name": "店铺维度销量", "data_type": "6"},
+                {"name": "ASIN维度销量", "data_type": "1"}
+            ]
+
+            for task in update_tasks:
+                logger.info(f"开始更新 {task['name']} 数据...")
+
+                task_success = self.update_sales_statistics(
+                    days_back=days_back,
+                    result_type="1",  # 销量
+                    date_unit="4",  # 按日统计
+                    data_type=task['data_type']
+                )
+
+                if not task_success:
+                    logger.warning(f"{task['name']} 更新失败，但继续执行其他任务")
+                    overall_success = False
+                else:
+                    logger.info(f"✅ {task['name']} 更新完成")
+
+                # 任务间短暂延迟，避免API限流
+                time.sleep(2)
+
+            # 可选：清理旧数据
+            if enable_cleanup:
+                cleanup_success = self.cleanup_old_sales_data(days_to_keep=90)
+                if not cleanup_success:
+                    logger.warning("销量数据清理失败")
+
+            return overall_success
+
+        except Exception as e:
+            logger.error(f"销量数据更新失败: {e}")
+            return False
+
+    def _generate_update_report(self, task_results, execution_time, overall_success):
+        """
+        生成更新任务报告
+
+        Args:
+            task_results: 各任务执行结果字典
+            execution_time: 总执行时间
+            overall_success: 整体是否成功
+        """
+        logger.info("=" * 60)
+        logger.info("每日数据更新任务报告")
+        logger.info("=" * 60)
+
+        success_count = 0
+        total_count = 0
+
+        for task_name, result in task_results.items():
+            total_count += 1
+            status_icon = "✅" if result is True else "⚠️" if result == "跳过" else "❌"
+            status_text = "成功" if result is True else "跳过" if result == "跳过" else "失败"
+            logger.info(f"{status_icon} {task_name}: {status_text}")
+
+            if result is True:
+                success_count += 1
+
+        success_rate = (success_count / total_count) * 100 if total_count > 0 else 0
+
+        logger.info("-" * 40)
+        logger.info(f"任务完成情况: {success_count}/{total_count} ({success_rate:.1f}%)")
+        logger.info(f"总执行时间: {execution_time:.2f} 秒")
+
+        if overall_success:
+            logger.info("🎉 所有关键任务执行成功")
+        else:
+            logger.info("⚠️  部分任务执行失败，但非关键任务不影响整体流程")
+
+        logger.info("=" * 60)
+    def update_sales_statistics(self, days_back=7, result_type="1", date_unit="4", data_type="4", sids=None):
+        """
+        更新销量统计数据
+
+        Args:
+            days_back: 获取最近多少天的数据（默认7天）
+            result_type: 汇总类型 1销量 2订单量 3销售额
+            date_unit: 统计时间指标 1年 2月 3周 4日
+            data_type: 统计数据维度 1ASIN 2父体 3MSKU 4SKU 5SPU 6店铺
+            sids: 店铺ID列表，多个使用英文逗号分隔
+
+        Returns:
+            bool: 更新是否成功
+        """
+        try:
+            from datetime import datetime, timedelta
+
+            # 计算日期范围（确保不超过90天限制）
+            days_back = min(days_back, 90)  # API限制最大90天
+            end_date = datetime.now().date()
+            start_date = end_date - timedelta(days=days_back)
+
+            start_date_str = start_date.strftime("%Y-%m-%d")
+            end_date_str = end_date.strftime("%Y-%m-%d")
+
+            print(f"开始更新销量统计数据，时间范围: {start_date_str} 到 {end_date_str}")
+            print(f"统计参数 - 汇总类型: {result_type}, 时间单位: {date_unit}, 数据维度: {data_type}")
+
+            if sids:
+                print(f"指定店铺ID: {sids}")
+
+            # 调用销量数据获取方法
+            success = self.api_client.get_sales_by_date_range(
+                db_config=self.db_config,
+                start_date=start_date_str,
+                end_date=end_date_str,
+                result_type=result_type,
+                date_unit=date_unit,
+                data_type=data_type,
+                sids=sids
+            )
+
+            if success:
+                print("销量统计数据更新成功")
+                # 记录更新统计信息
+                self._log_sales_update_summary(start_date_str, end_date_str)
+            else:
+                print("销量统计数据更新失败")
+
+            return success
+
+        except Exception as e:
+            print(f"更新销量统计数据失败: {e}")
+            import traceback
+            print(f"详细错误信息: {traceback.format_exc()}")
+            return False
+
+    def _log_sales_update_summary(self, start_date, end_date):
+        """
+        记录销量数据更新摘要信息（适配sales_code）
+        """
+        try:
+            if not self.data_operator or not self.data_operator.conn:
+                self.connect_database()
+
+            # 查询本次更新的数据统计
+            summary_sql = """
+            SELECT 
+                COUNT(*) as total_records,
+                COUNT(DISTINCT sales_code) as sales_code,
+                SUM(volume_total) as total_volume,
+                AVG(volume_total) as avg_volume,
+                MIN(create_time) as earliest_record,
+                MAX(create_time) as latest_record
+            FROM sales_info 
+            WHERE create_time >= DATE_SUB(NOW(), INTERVAL 1 HOUR)
+            AND create_time <= NOW()
+            """
+
+            self.data_operator.cursor.execute(summary_sql)
+            result = self.data_operator.cursor.fetchone()
+
+            if result and result[0] > 0:
+                print(f"销量更新摘要 - 时间段: {start_date} 至 {end_date}")
+                print(f"  新增记录数: {result[0]} 条")
+                print(f"  唯一SKU数量: {result[1]} 个")
+                print(f"  总销量/销售额: {result[2]:.2f}")
+                print(f"  平均销量/销售额: {result[3]:.2f}")
+                print(f"  最早记录时间: {result[4]}")
+                print(f"  最晚记录时间: {result[5]}")
+            else:
+                print("未找到本次更新的销量记录")
+
+        except Exception as e:
+            print(f"生成销量更新摘要失败: {e}")
+
+    def cleanup_old_sales_data(self, days_to_keep=90):
+        """
+        清理旧的销量数据
+        """
+        try:
+            if not self.data_operator or not self.data_operator.conn:
+                self.connect_database()
+
+            # 先统计要删除的数据量
+            count_sql = "SELECT COUNT(*) FROM sales_info WHERE create_time < DATE_SUB(NOW(), INTERVAL %s DAY)"
+            self.data_operator.cursor.execute(count_sql, (days_to_keep,))
+            count_result = self.data_operator.cursor.fetchone()
+
+            if count_result and count_result[0] > 0:
+                print(f"准备清理 {count_result[0]} 条 {days_to_keep} 天前的销量数据")
+
+                # 执行删除
+                delete_sql = "DELETE FROM sales_info WHERE create_time < DATE_SUB(NOW(), INTERVAL %s DAY)"
+                self.data_operator.cursor.execute(delete_sql, (days_to_keep,))
+                deleted_rows = self.data_operator.cursor.rowcount
+
+                self.data_operator.conn.commit()
+                print(f"成功清理 {deleted_rows} 条旧销量数据")
+
+                # 优化表空间
+                optimize_sql = "OPTIMIZE TABLE sales_info"
+                self.data_operator.cursor.execute(optimize_sql)
+                print("表空间优化完成")
+
+                return True
+            else:
+                print(f"没有需要清理的旧销量数据（保留 {days_to_keep} 天）")
+                return True
+
+        except Exception as e:
+            print(f"清理旧销量数据失败: {e}")
+            if self.data_operator.conn:
+                self.data_operator.conn.rollback()
+            return False
+
+    def rebuild_orders_merge_table(self):
+        """
+        重建订单合并宽表 orders_merge
+        将订单、物流、商品和店铺信息联合为一个宽表供前端展示
+        """
+        try:
+            print("开始重建订单合并宽表...")
+
+            if not self.data_operator or not self.data_operator.conn:
+                self.connect_database()
+
+            # 重建合并表的SQL语句
+            sql = """
+            DROP TABLE IF EXISTS orders_merge;
+
+            CREATE TABLE orders_merge AS
+            SELECT 
+                o.global_order_no,
+                o.reference_no,
+                o.store_id,
+                o.order_from_name,
+                o.delivery_type,
+                o.split_type,
+                o.order_status,
+                IF(o.global_purchase_time IS NOT NULL, 
+                   FROM_UNIXTIME(o.global_purchase_time, '%Y-%m-%d %H:%i:%s'), 
+                   NULL) AS global_purchase_time,
+                IF(o.global_payment_time IS NOT NULL, 
+                   FROM_UNIXTIME(o.global_payment_time, '%Y-%m-%d %H:%i:%s'), 
+                   NULL) AS global_payment_time,
+                IF(o.global_review_time IS NOT NULL, 
+                   FROM_UNIXTIME(o.global_review_time, '%Y-%m-%d %H:%i:%s'), 
+                   NULL) AS global_review_time,
+                IF(o.global_distribution_time IS NOT NULL, 
+                   FROM_UNIXTIME(o.global_distribution_time, '%Y-%m-%d %H:%i:%s'), 
+                   NULL) AS global_distribution_time,
+                IF(o.global_print_time IS NOT NULL, 
+                   FROM_UNIXTIME(o.global_print_time, '%Y-%m-%d %H:%i:%s'), 
+                   NULL) AS global_print_time,
+                IF(o.global_mark_time IS NOT NULL and o.global_mark_time !=0, 
+                   FROM_UNIXTIME(o.global_mark_time, '%Y-%m-%d %H:%i:%s'), 
+                   NULL) AS global_mark_time,
+                IF(o.global_delivery_time IS NOT NULL, 
+                   FROM_UNIXTIME(o.global_delivery_time, '%Y-%m-%d %H:%i:%s'), 
+                   NULL) AS global_delivery_time,
+                o.amount_currency,
+                IF(o.global_latest_ship_time IS NOT NULL, 
+                   FROM_UNIXTIME(o.global_latest_ship_time, '%Y-%m-%d %H:%i:%s'), 
+                   NULL) AS global_latest_ship_time,
+                IF(o.global_cancel_time IS NOT NULL and o.global_cancel_time!=0 , 
+                   FROM_UNIXTIME(o.global_cancel_time, '%Y-%m-%d %H:%i:%s'), 
+                   NULL) AS global_cancel_time,
+                IF(o.update_time IS NOT NULL, 
+                   FROM_UNIXTIME(o.update_time, '%Y-%m-%d %H:%i:%s'), 
+                   NULL) AS update_time,
+                o.order_tag,
+                o.pending_order_tag,
+                o.exception_order_tag,
+                o.wid,
+                o.warehouse_name,
+                o.original_global_order_no,
+                o.supplier_id,
+                o.is_delete,
+                o.order_custom_fields,
+                IF(o.global_create_time IS NOT NULL, 
+                   FROM_UNIXTIME(o.global_create_time, '%Y-%m-%d %H:%i:%s'), 
+                   NULL) AS global_create_time,
+                l.logistics_type_id,
+                l.logistics_type_name,
+                l.logistics_provider_id,
+                l.logistics_provider_name,
+                l.actual_carrier,
+                l.waybill_no,
+                l.pre_weight,
+                l.pre_fee_weight,
+                l.pre_fee_weight_unit,
+                l.pre_pkg_length,
+                l.pre_pkg_height,
+                l.pre_pkg_width,
+                l.weight,
+                l.pkg_fee_weight,
+                l.pkg_fee_weight_unit,
+                l.pkg_length,
+                l.pkg_width,
+                l.pkg_height,
+                l.weight_unit,
+                l.pkg_size_unit,
+                l.cost_currency_code,
+                IF(l.pre_cost_amount IS NOT NULL,
+                   CAST(REPLACE(REPLACE(l.pre_cost_amount, '-￥', ''), '￥', '') AS DECIMAL(10,2)),
+                   NULL) AS pre_cost_amount,
+                l.cost_amount,
+                IF(l.logistics_time IS NOT NULL, 
+                   FROM_UNIXTIME(l.logistics_time, '%Y-%m-%d %H:%i:%s'), 
+                   NULL) AS logistics_time,
+                l.tracking_no,
+                l.mark_no,
+
+                i.global_item_no,
+                i.item_id,
+                i.platform_order_no,
+                i.order_item_no,
+                i.item_from_name,
+                i.msku,
+                i.local_sku,
+                i.product_no,
+                i.local_product_name,
+                i.is_bundled,
+                i.title,
+                i.variant_attr,
+                i.unit_price_amount,
+                i.item_price_amount,
+                i.quantity,
+                i.platform_status,
+                i.item_type,
+                i.stock_cost_amount,
+                i.wms_outbound_cost_amount,
+                i.stock_deduct_id,
+                i.stock_deduct_name,
+                i.cg_price_amount,
+                i.shipping_amount,
+                i.wms_shipping_price_amount,
+                i.customer_shipping_amount,
+                i.discount_amount,
+                i.customer_tip_amount,
+                i.tax_amount,
+                i.sales_revenue_amount,
+                i.transaction_fee_amount,
+                i.other_amount,
+                i.customized_url,
+                i.platform_subsidy_amount,
+                i.cod_amount,
+                i.gift_wrap_amount,
+                i.platform_tax_amount,
+                i.points_granted_amount,
+                i.other_fee,
+                IF(i.delivery_time IS NOT NULL, 
+                   FROM_UNIXTIME(i.delivery_time, '%Y-%m-%d %H:%i:%s'), 
+                   NULL) AS delivery_time,
+                i.source_name,
+                i.data_json,
+                i.item_custom_fields,
+                s.sid AS store_sid,
+                s.store_name AS store_full_name,
+                s.platform_code AS store_platform_code,
+                s.platform_name AS store_platform_name,
+                s.currency AS store_currency,
+                s.is_sync AS store_is_sync,
+                s.status AS store_status,
+                s.country_code AS store_country_code
+            FROM orders o
+            LEFT JOIN logistics_info l ON o.global_order_no = l.global_order_no
+            LEFT JOIN item_info i ON o.global_order_no = i.global_order_no
+            LEFT JOIN store_info s ON o.store_id = s.store_id;
+
+            ALTER TABLE orders_merge ADD PRIMARY KEY (global_item_no);
+
+            -- 添加索引以提高查询性能
+            CREATE INDEX idx_orders_merge_global_item_no ON orders_merge(global_item_no);
+            CREATE INDEX idx_orders_merge_global_order_no ON orders_merge(global_order_no);
+            CREATE INDEX idx_orders_merge_store_id ON orders_merge(store_id);
+            """
+
+            # 执行SQL语句
+            statements = [stmt.strip() for stmt in sql.split(';') if stmt.strip()]
+
+            for statement in statements:
+                try:
+                    self.data_operator.cursor.execute(statement)
+                    print(f"执行SQL成功: {statement[:100]}...")
+                except Exception as e:
+                    print(f"执行SQL失败: {e}")
+                    print(f"失败语句: {statement}")
+                    # 继续执行其他语句，不中断整个流程
+
+            self.data_operator.conn.commit()
+            print("订单合并宽表重建成功")
+            return True
+
+        except Exception as e:
+            print(f"重建订单合并宽表失败: {e}")
+            if self.data_operator.conn:
+                self.data_operator.conn.rollback()
+            return False
 
 
 
 def main():
-    """主函数"""
     try:
-        logger.info("=" * 50)
-        logger.info("每日订单状态更新系统启动")
-        logger.info("=" * 50)
+        logger.info("=" * 60)
+        logger.info("每日数据更新系统启动")
+        logger.info("=" * 60)
 
         # 加载配置
         config = load_config_from_env()
@@ -274,21 +854,29 @@ def main():
             db_config=config['db_config']
         )
 
-        # 执行每日更新（检查最近1天的订单，启用数据清理）
+        # 执行整合后的每日更新任务
         success = updater.run_daily_update(
-            days_to_check=1 # 检查最近1天的订单
-            # enable_cleanup=True  # 启用数据清理
+            days_to_check=1,           # 检查最近1天的订单
+            enable_cleanup=True,      # 是否启用数据清理
+            update_inventory=True,     # 更新库存信息
+            update_warehouse=True,     # 更新仓库信息
+            update_store=True,         # 更新店铺信息
+            update_sales=True,         # 更新销量数据
+            sales_days_back=7,         # 销量数据回溯7天
+            rebuild_merge_table=True   # 重建订单合并宽表
         )
 
         if success:
-            logger.info("✅ 每日订单更新任务执行成功")
-            sys.exit(0)  # 成功退出码
+            logger.info("✅ 每日数据更新任务执行成功")
+            sys.exit(0)
         else:
-            logger.error("❌ 每日订单更新任务执行失败")
-            sys.exit(1)  # 失败退出码
+            logger.warning("⚠️ 部分数据更新任务执行失败")
+            sys.exit(1)
 
     except Exception as e:
         logger.error(f"💥 系统执行出现未预期错误: {e}")
+        import traceback
+        logger.error(f"详细错误: {traceback.format_exc()}")
         sys.exit(1)
 
 

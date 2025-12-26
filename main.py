@@ -12,6 +12,8 @@ from config import  load_config_from_env
 
 
 
+
+
 class LingXingAPI:
     """零星开放平台API客户端"""
 
@@ -735,8 +737,281 @@ class LingXingAPI:
                 print(f"处理订单数据失败: {e}")
                 return False
 
+    def get_sales_by_date_range(self, db_config, start_date, end_date, result_type="1", date_unit="4",
+                                data_type="4", sids=None, max_retries=3, delay=1):
+        """
+        获取指定时间范围内的销量数据并存入数据库
 
+        Args:
+            db_config: 数据库配置字典
+            start_date: 开始日期（格式：YYYY-MM-DD）
+            end_date: 结束日期（格式：YYYY-MM-DD）
+            result_type: 汇总类型 1销量 2订单量 3销售额
+            date_unit: 统计时间指标 1年 2月 3周 4日
+            data_type: 统计数据维度 1ASIN 2父体 3MSKU 4SKU 5SPU 6店铺
+            sids: 店铺ID列表，多个使用英文逗号分隔
+            max_retries: 最大重试次数
+            delay: 请求延迟
 
+        Returns:
+            bool: 处理成功返回True，否则False
+        """
+        try:
+            # 验证日期范围不超过90天
+            from datetime import datetime
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            days_diff = (end_dt - start_dt).days
+
+            if days_diff > 90:
+                print(f"错误: 时间范围超过90天限制: {days_diff}天")
+                return False
+
+            print(f"获取销量数据，时间范围: {start_date} 到 {end_date}")
+            print(f"统计参数 - 汇总类型: {result_type}, 时间单位: {date_unit}, 数据维度: {data_type}")
+
+            if sids:
+                print(f"指定店铺ID: {sids}")
+
+            # API路径和请求参数
+            api_path = "/basicOpen/platformStatisticsV2/saleStat/pageList"
+            base_biz_body = {
+                "start_date": start_date,
+                "end_date": end_date,
+                "result_type": result_type,
+                "date_unit": date_unit,
+                "data_type": data_type
+            }
+
+            # 添加可选参数
+            if sids:
+                base_biz_body["sids"] = sids
+
+            # 使用分批处理方式
+            total_processed = self.fetch_and_process_sales_data_batch(
+                api_path, base_biz_body, db_config, max_retries, delay
+            )
+
+            if total_processed > 0:
+                print(f"成功处理 {total_processed} 条销量数据")
+                return True
+            else:
+                print("警告: 未处理任何销量数据")
+                return False
+
+        except Exception as e:
+            print(f"处理销量数据失败: {e}")
+            import traceback
+            print(f"详细错误: {traceback.format_exc()}")
+            return False
+
+    def fetch_and_process_sales_data_batch(self, api_path, base_biz_body, db_config, max_retries=3, delay=1):
+        """
+        从分页API获取销量数据并实时分批处理
+
+        Args:
+            api_path: API路径
+            base_biz_body: 基础请求体参数
+            db_config: 数据库配置
+            max_retries: 最大重试次数
+            delay: 请求延迟
+
+        Returns:
+            int: 成功处理的总记录数
+        """
+        total_processed = 0
+        current_page = 1
+        page_size = 100  # 每页大小，可根据API限制调整
+        request_attempt = 0
+
+        # 初始化数据处理器
+        data_operator = DataOperator(db_config)
+
+        try:
+            # 连接数据库
+            data_operator.connect_db()
+            print("数据库连接成功，开始分批处理销量数据...")
+
+            # 1. 首先获取数据总量
+            print("正在获取销量数据总量...")
+            biz_body = base_biz_body.copy()
+            biz_body.update({
+                "page": 1,
+                "length": 20  # 初始请求获取少量数据以获取总数
+            })
+
+            try:
+                initial_result = self.api_post(api_path, biz_body)
+
+                if not initial_result or initial_result.get("code") != 0:
+                    print(f"获取数据总量失败: {initial_result}")
+                    return total_processed
+
+                total_expected = initial_result.get("total", 0)
+                print(f"销量数据总量为: {total_expected}")
+
+            except Exception as e:
+                print(f"获取数据总量失败: {e}")
+                return total_processed
+
+            # 2. 计算总页数
+            total_pages = (total_expected + page_size - 1) // page_size if total_expected > 0 else 0
+            print(f"开始分页请求，共需处理 {total_pages} 页数据，每页 {page_size} 条...")
+
+            # 3. 分批获取和处理数据
+            while current_page <= total_pages and request_attempt < max_retries:
+                print(f"正在处理第 {current_page}/{total_pages} 页")
+
+                try:
+                    # 构建当前页的请求参数
+                    biz_body = base_biz_body.copy()
+                    biz_body.update({
+                        "page": current_page,
+                        "length": page_size
+                    })
+
+                    # 获取当前批次数据
+                    result = self.api_post(api_path, biz_body)
+
+                    # 检查API响应
+                    if not result or result.get("code") != 0:
+                        error_msg = result.get("message", "未知错误") if result else "空响应"
+                        print(f"警告: 第 {current_page} 页API请求失败: {error_msg}")
+                        request_attempt += 1
+                        time.sleep(delay * 2)
+                        continue
+
+                    data_list = result.get("data", [])
+                    batch_size = len(data_list)
+
+                    if batch_size == 0:
+                        print("当前页未返回数据，退出循环")
+                        break
+
+                    # 处理当前批次数据
+                    print(f"第 {current_page} 页获取成功，本页 {batch_size} 条数据，开始插入数据库...")
+
+                    batch_success_count = self._process_sales_batch_data(data_operator, data_list)
+                    total_processed += batch_success_count
+
+                    if batch_success_count == batch_size:
+                        print(f"第 {current_page} 页数据插入成功 ({batch_success_count}/{batch_size})")
+                        request_attempt = 0  # 重置重试计数
+                        current_page += 1  # 处理下一页
+                    else:
+                        print(f"警告: 第 {current_page} 页数据部分插入失败 ({batch_success_count}/{batch_size})")
+                        request_attempt += 1
+
+                    # 请求间隔，避免API限流
+                    time.sleep(delay)
+
+                except Exception as e:
+                    request_attempt += 1
+                    print(f"错误: 第 {current_page} 页处理失败，正在进行第 {request_attempt} 次重试。错误: {e}")
+
+                    if request_attempt >= max_retries:
+                        print("错误: 重试次数已达上限，停止处理")
+                        break
+
+                    time.sleep(delay * 2)
+
+            print(f"销量数据处理完成。预期数据量: {total_expected}，实际成功处理: {total_processed}")
+            return total_processed
+
+        except Exception as e:
+            print(f"处理销量数据过程中发生错误: {e}")
+            import traceback
+            print(f"详细错误: {traceback.format_exc()}")
+            return total_processed
+
+        finally:
+            # 确保数据库连接被关闭
+            data_operator.disconnect_db()
+
+    def _process_sales_batch_data(self, data_operator, data_list):
+        """
+        处理单批销量数据
+
+        Args:
+            data_operator: 数据库操作对象
+            data_list: 单批数据列表
+
+        Returns:
+            int: 成功处理的数据条数
+        """
+        success_count = 0
+
+        for data in data_list:
+            try:
+                # 预处理数据，处理JSON字符串字段
+                processed_data = self._preprocess_sales_data(data)
+
+                # 插入数据库
+                if data_operator.insert_sales_info(processed_data):
+                    success_count += 1
+                else:
+                    print("警告: 单条销量数据插入失败")
+
+            except Exception as e:
+                print(f"错误: 处理单条销量数据失败: {e}")
+                continue
+
+        return success_count
+
+    def _preprocess_sales_data(self, data):
+        """
+        预处理销量数据，处理JSON字符串等特殊字段
+        """
+        import json
+        import hashlib
+
+        processed_data = data.copy()
+
+        # 处理JSON字符串字段
+        json_fields_to_process = ['msku', 'date_collect']
+
+        for field in json_fields_to_process:
+            if field in processed_data and isinstance(processed_data[field], str):
+                try:
+                    processed_data[field] = json.loads(processed_data[field])
+                except:
+                    if field == 'msku':
+                        processed_data[field] = [processed_data[field]] if processed_data[field] else []
+                    elif field == 'date_collect':
+                        processed_data[field] = {}
+
+        # 确保所有数组字段都是列表类型
+        array_fields = [
+            'sku', 'spu', 'spu_name', 'msku', 'mskuId', 'sid',
+            'skuAndProductName', 'product_name', 'develop_name',
+            'platform_code', 'platform_name', 'attribute',
+            'parentAsin', 'site_code', 'site_name', 'store_name',
+            'platform_product_id', 'platform_product_title'
+        ]
+
+        for field in array_fields:
+            if field in processed_data and not isinstance(processed_data[field], list):
+                if processed_data[field] is None:
+                    processed_data[field] = []
+                else:
+                    processed_data[field] = [processed_data[field]]
+
+        # 确保数值字段类型正确
+        if 'volumeTotal' in processed_data:
+            try:
+                if processed_data['volumeTotal'] is None or processed_data['volumeTotal'] == '':
+                    processed_data['volumeTotal'] = 0
+                else:
+                    processed_data['volumeTotal'] = float(processed_data['volumeTotal'])
+            except (ValueError, TypeError):
+                processed_data['volumeTotal'] = 0
+
+        # 计算sales_code（基于sku字段）
+        sku_list = processed_data.get('sku', [])
+        sku_json = json.dumps(sku_list, sort_keys=True, separators=(',', ':'))
+        processed_data['sales_code'] = hashlib.md5(sku_json.encode('utf-8')).hexdigest()
+
+        return processed_data
 
 # ========= API调用 =========
 if __name__ == "__main__":
@@ -747,19 +1022,21 @@ if __name__ == "__main__":
         app_id=config['app_id'],
         app_secret=config['app_secret'])
     db_config = config['db_config']
-    warehouseids = client.getwarehouseids(db_config=db_config)
-    for i in warehouseids:
-        wid_str = ",".join([str(i) for i in warehouseids])
-    print(wid_str)
-    res4 = client.getinvetoryList(db_config=db_config,str=wid_str)
     #设置时间
-    # start_time = "20251122 00:00:00"
-    # end_time = "20251223 00:00:00"
+    start_time = "2025-11-22"
+    end_time = "2025-12-23"
     # 使用分批处理方式
     # res1 = client.get_orders_by_time_range(db_config=db_config,start_time=start_time,end_time=end_time)
     # res2 = client.getstoreList(db_config=db_config)
     #非分页数据直接处理
     # res3 = client.getwarehouseList(db_config=db_config)
+    # warehouseids = client.getwarehouseids(db_config=db_config)
+    # for i in warehouseids:
+    #     wid_str = ",".join([str(i) for i in warehouseids])
+    # print(wid_str)
+    # res4 = client.getinvetoryList(db_config=db_config, str=wid_str)
+    res5 = client.get_sales_by_date_range(start_date=start_time,end_date=end_time,db_config = db_config)
+    print(res5)
 
 
 

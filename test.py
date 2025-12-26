@@ -103,15 +103,15 @@ def api_post(api_path: str, biz_body: dict) -> dict:
 
 # ========= API调用 =========
 if __name__ == "__main__":
-    wid_list = [15963, 16488, 16489, 16490, 16491, 16492, 16493, 16629, 16630, 16631, 16632, 17735, 18479, 18499, 18742, 18888, 19204]
-    for i in wid_list:
-        wid_str  = ",".join([str(i) for i in wid_list])
-    print(wid_str)
     #查询销量统计列表v2
-    api_path = "/erp/sc/routing/data/local_inventory/inventoryDetails"
+    api_path = "/basicOpen/platformStatisticsV2/saleStat/pageList"
     biz_body = {
-      "wid":wid_str
+        "start_date": '2025-11-24',
+        "end_date": '2025-12-24',
+        "result_type": "1",
+        "date_unit": "4",
+        "data_type": "4"
     }
 
     result = api_post(api_path, biz_body)
-    print(json.dumps(result["data"][0], indent=4, ensure_ascii=False))
+    print(json.dumps(result, indent=4, ensure_ascii=False))
