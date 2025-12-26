@@ -22,6 +22,10 @@ def load_config_from_env():
             'connect_timeout': int(os.getenv('DB_CONNECT_TIMEOUT', '15')),
             'read_timeout': int(os.getenv('DB_READ_TIMEOUT', '45')),
             'write_timeout': int(os.getenv('DB_WRITE_TIMEOUT', '45'))
+        },
+        'feishu_config':{
+            'APP_ID': "cli_a9bc132c7af81bc7",
+            'APP_SECRET' :"0xpxP8mp9Iu5kpymCGQ5FeAujRhAYAfB"
         }
     }
 

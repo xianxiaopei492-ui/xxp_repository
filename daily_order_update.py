@@ -675,37 +675,69 @@ class DailyOrderUpdater:
                 o.delivery_type,
                 o.split_type,
                 o.order_status,
-                IF(o.global_purchase_time IS NOT NULL, 
-                   FROM_UNIXTIME(o.global_purchase_time, '%Y-%m-%d %H:%i:%s'), 
-                   NULL) AS global_purchase_time,
-                IF(o.global_payment_time IS NOT NULL, 
-                   FROM_UNIXTIME(o.global_payment_time, '%Y-%m-%d %H:%i:%s'), 
-                   NULL) AS global_payment_time,
-                IF(o.global_review_time IS NOT NULL, 
-                   FROM_UNIXTIME(o.global_review_time, '%Y-%m-%d %H:%i:%s'), 
-                   NULL) AS global_review_time,
-                IF(o.global_distribution_time IS NOT NULL, 
-                   FROM_UNIXTIME(o.global_distribution_time, '%Y-%m-%d %H:%i:%s'), 
-                   NULL) AS global_distribution_time,
-                IF(o.global_print_time IS NOT NULL, 
-                   FROM_UNIXTIME(o.global_print_time, '%Y-%m-%d %H:%i:%s'), 
-                   NULL) AS global_print_time,
-                IF(o.global_mark_time IS NOT NULL and o.global_mark_time !=0, 
-                   FROM_UNIXTIME(o.global_mark_time, '%Y-%m-%d %H:%i:%s'), 
-                   NULL) AS global_mark_time,
-                IF(o.global_delivery_time IS NOT NULL, 
-                   FROM_UNIXTIME(o.global_delivery_time, '%Y-%m-%d %H:%i:%s'), 
-                   NULL) AS global_delivery_time,
+                -- 将时间字段改为DATETIME类型
+                CASE 
+                    WHEN o.global_purchase_time IS NOT NULL AND o.global_purchase_time != 0 
+                    THEN FROM_UNIXTIME(o.global_purchase_time, '%Y-%m-%d %H:%i:%s')
+                    ELSE NULL 
+                END AS global_purchase_time,
+                
+                CASE 
+                    WHEN o.global_payment_time IS NOT NULL AND o.global_payment_time != 0 
+                    THEN FROM_UNIXTIME(o.global_payment_time, '%Y-%m-%d %H:%i:%s')
+                    ELSE NULL 
+                END AS global_payment_time,
+                
+                CASE 
+                    WHEN o.global_review_time IS NOT NULL AND o.global_review_time != 0 
+                    THEN FROM_UNIXTIME(o.global_review_time, '%Y-%m-%d %H:%i:%s')
+                    ELSE NULL 
+                END AS global_review_time,
+                
+                CASE 
+                    WHEN o.global_distribution_time IS NOT NULL AND o.global_distribution_time != 0 
+                    THEN FROM_UNIXTIME(o.global_distribution_time, '%Y-%m-%d %H:%i:%s')
+                    ELSE NULL 
+                END AS global_distribution_time,
+                
+                CASE 
+                    WHEN o.global_print_time IS NOT NULL AND o.global_print_time != 0 
+                    THEN FROM_UNIXTIME(o.global_print_time, '%Y-%m-%d %H:%i:%s')
+                    ELSE NULL 
+                END AS global_print_time,
+                
+                CASE 
+                    WHEN o.global_mark_time IS NOT NULL AND o.global_mark_time != 0 
+                    THEN FROM_UNIXTIME(o.global_mark_time, '%Y-%m-%d %H:%i:%s')
+                    ELSE NULL 
+                END AS global_mark_time,
+                
+                CASE 
+                    WHEN o.global_delivery_time IS NOT NULL AND o.global_delivery_time != 0 
+                    THEN FROM_UNIXTIME(o.global_delivery_time, '%Y-%m-%d %H:%i:%s')
+                    ELSE NULL 
+                END AS global_delivery_time,
+                
                 o.amount_currency,
-                IF(o.global_latest_ship_time IS NOT NULL, 
-                   FROM_UNIXTIME(o.global_latest_ship_time, '%Y-%m-%d %H:%i:%s'), 
-                   NULL) AS global_latest_ship_time,
-                IF(o.global_cancel_time IS NOT NULL and o.global_cancel_time!=0 , 
-                   FROM_UNIXTIME(o.global_cancel_time, '%Y-%m-%d %H:%i:%s'), 
-                   NULL) AS global_cancel_time,
-                IF(o.update_time IS NOT NULL, 
-                   FROM_UNIXTIME(o.update_time, '%Y-%m-%d %H:%i:%s'), 
-                   NULL) AS update_time,
+                
+                CASE 
+                    WHEN o.global_latest_ship_time IS NOT NULL AND o.global_latest_ship_time != 0 
+                    THEN FROM_UNIXTIME(o.global_latest_ship_time, '%Y-%m-%d %H:%i:%s')
+                    ELSE NULL 
+                END AS global_latest_ship_time,
+                
+                CASE 
+                    WHEN o.global_cancel_time IS NOT NULL AND o.global_cancel_time != 0 
+                    THEN FROM_UNIXTIME(o.global_cancel_time, '%Y-%m-%d %H:%i:%s')
+                    ELSE NULL 
+                END AS global_cancel_time,
+                
+                CASE 
+                    WHEN o.update_time IS NOT NULL AND o.update_time != 0 
+                    THEN FROM_UNIXTIME(o.update_time, '%Y-%m-%d %H:%i:%s')
+                    ELSE NULL 
+                END AS update_time,
+                
                 o.order_tag,
                 o.pending_order_tag,
                 o.exception_order_tag,
@@ -715,9 +747,13 @@ class DailyOrderUpdater:
                 o.supplier_id,
                 o.is_delete,
                 o.order_custom_fields,
-                IF(o.global_create_time IS NOT NULL, 
-                   FROM_UNIXTIME(o.global_create_time, '%Y-%m-%d %H:%i:%s'), 
-                   NULL) AS global_create_time,
+                
+                CASE 
+                    WHEN o.global_create_time IS NOT NULL AND o.global_create_time != 0 
+                    THEN FROM_UNIXTIME(o.global_create_time, '%Y-%m-%d %H:%i:%s')
+                    ELSE NULL 
+                END AS global_create_time,
+                
                 l.logistics_type_id,
                 l.logistics_type_name,
                 l.logistics_provider_id,
@@ -739,16 +775,23 @@ class DailyOrderUpdater:
                 l.weight_unit,
                 l.pkg_size_unit,
                 l.cost_currency_code,
-                IF(l.pre_cost_amount IS NOT NULL,
-                   CAST(REPLACE(REPLACE(l.pre_cost_amount, '-￥', ''), '￥', '') AS DECIMAL(10,2)),
-                   NULL) AS pre_cost_amount,
+                
+                CASE 
+                    WHEN l.pre_cost_amount IS NOT NULL
+                    THEN CAST(REPLACE(REPLACE(l.pre_cost_amount, '-￥', ''), '￥', '') AS DECIMAL(10,2))
+                    ELSE NULL 
+                END AS pre_cost_amount,
+                
                 l.cost_amount,
-                IF(l.logistics_time IS NOT NULL, 
-                   FROM_UNIXTIME(l.logistics_time, '%Y-%m-%d %H:%i:%s'), 
-                   NULL) AS logistics_time,
+                
+                CASE 
+                    WHEN l.logistics_time IS NOT NULL AND l.logistics_time != 0 
+                    THEN FROM_UNIXTIME(l.logistics_time, '%Y-%m-%d %H:%i:%s')
+                    ELSE NULL 
+                END AS logistics_time,
+                
                 l.tracking_no,
                 l.mark_no,
-
                 i.global_item_no,
                 i.item_id,
                 i.platform_order_no,
@@ -787,9 +830,13 @@ class DailyOrderUpdater:
                 i.platform_tax_amount,
                 i.points_granted_amount,
                 i.other_fee,
-                IF(i.delivery_time IS NOT NULL, 
-                   FROM_UNIXTIME(i.delivery_time, '%Y-%m-%d %H:%i:%s'), 
-                   NULL) AS delivery_time,
+                
+                CASE 
+                    WHEN i.delivery_time IS NOT NULL AND i.delivery_time != 0 
+                    THEN FROM_UNIXTIME(i.delivery_time, '%Y-%m-%d %H:%i:%s')
+                    ELSE NULL 
+                END AS delivery_time,
+                
                 i.source_name,
                 i.data_json,
                 i.item_custom_fields,
