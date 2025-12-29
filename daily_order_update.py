@@ -10,13 +10,12 @@ import time
 from datetime import datetime, timedelta
 from dataoperator import DataOperator
 from config import load_config_from_env
-from main import LingXingAPI
+from api_use import LingXingAPI
 import  traceback
 import  json
 import  pymysql
-# 添加当前目录到Python路径，确保可以导入您的模块
 from utils import extract_store_name, extract_from_json
-
+# 添加当前目录到Python路径，确保可以导入您的模块
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # 配置日志系统
 logging.basicConfig(
@@ -296,11 +295,11 @@ class DailyOrderUpdater:
         else:
             logger.info("⚠️  部分任务执行失败，但非关键任务不影响整体流程")
         logger.info("=" * 60)
-    def update_sales_statistics(self, days_back=7, result_type="1", date_unit="4", data_type="4", sids=None):
+    def update_sales_statistics(self, days_back=30, result_type="1", date_unit="4", data_type="4", sids=None):
         """
         更新销量统计数据
         Args:
-            days_back: 获取最近多少天的数据（默认7天）
+            days_back: 获取最近多少天的数据（默认30天）
             result_type: 汇总类型 1销量 2订单量 3销售额
             date_unit: 统计时间指标 1年 2月 3周 4日
             data_type: 统计数据维度 1ASIN 2父体 3MSKU 4SKU 5SPU 6店铺
@@ -854,27 +853,7 @@ class DailyOrderUpdater:
                 self.data_operator.conn.rollback()
             return False
 
-    def _extract_from_json(self, data, default_value, field_name):
-        """
-        安全地从JSON数据中提取值
-        """
-        try:
-            if data is None:
-                return default_value
 
-            if isinstance(data, str) and data.startswith('['):
-                try:
-                    data_list = json.loads(data)
-                    return data_list[0] if data_list else default_value
-                except:
-                    return default_value
-            elif isinstance(data, list):
-                return data[0] if data else default_value
-            else:
-                return str(data) if data else default_value
-        except Exception as e:
-            print(f"❌ 提取{field_name}失败: {e}")
-            return default_value
 
 
     def run_daily_update(self, days_to_check=1, enable_cleanup=False,
@@ -1062,7 +1041,7 @@ def main():
             update_inventory=False,  # 更新库存信息
             update_warehouse=False,  # 更新仓库信息
             update_store=False,  # 更新店铺信息
-            update_sales=False,  # 更新销量数据
+            update_sales=True,  # 更新销量数据
             sales_days_back=7,  # 销量数据回溯7天
             rebuild_merge_table=False,  # 重建订单合并宽表
             rebuild_sales_summary=True  # 新增：重建销量汇总表
