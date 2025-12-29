@@ -136,6 +136,54 @@ def check_daily_order_log():
     return timestamp_ok and content_ok
 
 
+def check_daily_sales_summary_to_feishu_log():
+    """
+    检查每日订单更新日志
+    """
+    log_path = '/var/log/daily_sales_summary_to_feishu.log'
+
+    print("=" * 60)
+    print("📋 检查每日订单更新日志")
+    print("=" * 60)
+
+    # 检查文件存在性和时间戳
+    timestamp_ok = check_log_timestamp(log_path, hours_threshold=24)
+
+    # 检查日志内容
+    content_ok = check_recent_logs(
+        log_path,
+        keyword_success='任务执行成功',  # 根据实际日志调整关键词
+        keyword_error='任务执行失败',
+        hours_to_check=24
+    )
+
+    return timestamp_ok and content_ok
+
+def check_daily_inventory_to_feishu_log():
+    """
+    检查每日订单更新日志
+    """
+    log_path = '/var/log/inventory_to_feishu.log'
+
+    print("=" * 60)
+    print("📋 检查每日订单更新日志")
+    print("=" * 60)
+
+    # 检查文件存在性和时间戳
+    timestamp_ok = check_log_timestamp(log_path, hours_threshold=24)
+
+    # 检查日志内容
+    content_ok = check_recent_logs(
+        log_path,
+        keyword_success='任务执行成功',  # 根据实际日志调整关键词
+        keyword_error='任务执行失败',
+        hours_to_check=24
+    )
+
+    return timestamp_ok and content_ok
+
+
+
 def main():
     """
     主检查函数
@@ -146,14 +194,17 @@ def main():
     # 检查两个日志文件
     cancel_order_ok = check_cancel_order_log()
     daily_order_ok = check_daily_order_log()
-
+    inventory_ok = check_daily_inventory_to_feishu_log()
+    sales_summary_ok = check_daily_sales_summary_to_feishu_log()
     print("=" * 60)
     print("📊 检查结果汇总:")
     print(f"   取消订单同步任务: {'✅ 正常' if cancel_order_ok else '❌ 异常'}")
     print(f"   每日订单更新任务: {'✅ 正常' if daily_order_ok else '❌ 异常'}")
+    print(f"   每日销量统计同步任务: {'✅ 正常' if sales_summary_ok else '❌ 异常'}")
+    print(f"   每日库存更新任务: {'✅ 正常' if inventory_ok else '❌ 异常'}")
 
     # 总体状态判断
-    if cancel_order_ok and daily_order_ok:
+    if cancel_order_ok and daily_order_ok and inventory_ok and sales_summary_ok :
         print("🎉 所有定时任务运行正常!")
         return 0
     else:
