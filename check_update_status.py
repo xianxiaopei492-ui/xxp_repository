@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timedelta
 
 
+
 def check_recent_logs(log_file_path, keyword_success='任务执行成功', keyword_error='任务执行失败', hours_to_check=24):
     """
     检查最近指定小时内的日志

@@ -3,20 +3,18 @@ import requests
 import time
 import re
 from datetime import datetime, date
+from config import  load_config_from_env
+from utils import extract_store_name
+
+config = load_config_from_env()
 
 # ================== 配置部分 ==================
-APP_ID = "cli_a9bc132c7af81bc7"
-APP_SECRET = "0xpxP8mp9Iu5kpymCGQ5FeAujRhAYAfB"
-APP_Token = "VfzjbXYvwaXbUKs2ADKcwxL4no6"  # app_token
-CANCEL_ORDERS_TABLE_ID = "tblTbja1535i09YW"  # 新的取消订单表ID
+APP_ID = config['cancel_orders_config']['APP_ID']
+APP_SECRET = config['cancel_orders_config']['APP_SECRET']
+APP_Token = config['cancel_orders_config']['APP_TOKEN'] # app_token
+CANCEL_ORDERS_TABLE_ID = config['cancel_orders_config']['CANCEL_ORDERS_TABLE_ID']  # 新的取消订单表ID
 
-MYSQL_CONFIG = {
-    "host": "localhost",
-    "user": "root",
-    "password": "d15c76a0875e73c0",
-    "database": "lingxing_orders",
-    "charset": "utf8mb4"
-}
+MYSQL_CONFIG = config['db_config']
 
 MYSQL_TABLE = "orders_merge"
 
@@ -212,20 +210,7 @@ def create_field(token, field_def, table_id):
         return False
 
 
-def extract_store_name(full_store_name):
-    """使用正则表达式提取店铺名称（去掉[保健][美国]等前缀）"""
-    if not full_store_name:
-        return ""
 
-    # 匹配格式如：[保健][美国]80YML SALE，提取80YML SALE
-    pattern = r'\[.*?\]\[.*?\](.*)'
-    match = re.search(pattern, full_store_name)
-
-    if match:
-        return match.group(1).strip()
-    else:
-        # 如果没有匹配到预期格式，返回原字符串
-        return full_store_name
 
 
 def fetch_cancel_orders_data(date_filter=None):
