@@ -35,6 +35,24 @@ def load_config_from_env():
             'APP_SECRET': os.getenv('FEISHU_APP_SECRET', '0xpxP8mp9Iu5kpymCGQ5FeAujRhAYAfB'),
             'APP_TOKEN': os.getenv('FEISHU_APP_TOKEN', 'VfzjbXYvwaXbUKs2ADKcwxL4no6'),
             'CANCEL_ORDERS_TABLE_ID': os.getenv('FEISHU_CANCEL_ORDERS_TABLE_ID', 'tblTbja1535i09YW')
+        },
+        'sales_summary_config': {
+            'APP_ID': os.getenv('FEISHU_APP_ID', 'cli_a9bc132c7af81bc7'),
+            'APP_SECRET': os.getenv('FEISHU_APP_SECRET', '0xpxP8mp9Iu5kpymCGQ5FeAujRhAYAfB'),
+            'APP_TOKEN': os.getenv('FEISHU_APP_TOKEN', 'TTMLbFmFFaC4Vqs7CLMc0ER7n1f'),
+            'CANCEL_ORDERS_TABLE_ID': os.getenv('FEISHU_CANCEL_ORDERS_TABLE_ID', 'tblRJsFNEVnpM677')
+        },
+        'warehouse_config': {
+            'APP_ID': os.getenv('FEISHU_APP_ID', 'cli_a9bc132c7af81bc7'),
+            'APP_SECRET': os.getenv('FEISHU_APP_SECRET', '0xpxP8mp9Iu5kpymCGQ5FeAujRhAYAfB'),
+            'APP_TOKEN': os.getenv('FEISHU_APP_TOKEN', 'QB2wbNJwsa9q9ysz5KecvUfmnHc'),
+            'WAREHOUSE_TABLE_ID': os.getenv('FEISHU_CANCEL_ORDERS_TABLE_ID', 'tbls99XRbM3FKgKs')
+        },
+        'inventory_config': {
+            'APP_ID': os.getenv('FEISHU_APP_ID', 'cli_a9bc132c7af81bc7'),
+            'APP_SECRET': os.getenv('FEISHU_APP_SECRET', '0xpxP8mp9Iu5kpymCGQ5FeAujRhAYAfB'),
+            'APP_TOKEN': os.getenv('FEISHU_APP_TOKEN', 'Zoktbe2qWaXRwxsdhNlciFUunsf'),
+            'INVENTORY_TABLE_ID': os.getenv('FEISHU_CANCEL_ORDERS_TABLE_ID', 'tblWuUVtBWRr6AKR')
         }
     }
 

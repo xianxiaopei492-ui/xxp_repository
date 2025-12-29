@@ -1037,13 +1037,13 @@ def main():
         success = updater.run_daily_update(
             days_to_check=1,  # 检查最近1天的订单
             enable_cleanup=False,  # 是否启用数据清理
-            update_orders=False,  # 更新订单信息
-            update_inventory=False,  # 更新库存信息
-            update_warehouse=False,  # 更新仓库信息
-            update_store=False,  # 更新店铺信息
+            update_orders=True,  # 更新订单信息
+            update_inventory=True,  # 更新库存信息
+            update_warehouse=True,  # 更新仓库信息
+            update_store=True,  # 更新店铺信息
             update_sales=True,  # 更新销量数据
-            sales_days_back=7,  # 销量数据回溯7天
-            rebuild_merge_table=False,  # 重建订单合并宽表
+            sales_days_back=30,  # 销量数据回溯30天
+            rebuild_merge_table=True,  # 重建订单合并宽表
             rebuild_sales_summary=True  # 新增：重建销量汇总表
         )
         if success:
